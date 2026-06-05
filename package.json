@@ -1,0 +1,29 @@
+{
+  "name": "dnd-local-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local D&D projector web server — DM + projector views, maps, tokens, fog of war.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "trap 'kill 0' INT TERM EXIT; npm run dev:server & npm run dev:web & wait",
+    "dev:server": "npm run dev --workspace @dnd/server",
+    "dev:web": "npm run dev --workspace @dnd/web",
+    "stop": "fuser -k 4000/tcp 5173/tcp 2>/dev/null || true",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

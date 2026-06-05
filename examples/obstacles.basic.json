@@ -1,0 +1,41 @@
+{
+  "$comment": "Basic obstacles for the demo map (1000x700, 50px grid). Coordinates are in map pixels. Load from the DM toolbar -> 'Load obstacles'.",
+  "obstacles": [
+    {
+      "$note": "Horizontal stone wall across the middle (blocks movement and vision)",
+      "type": "blocks_both",
+      "shape": "rectangle",
+      "points": [
+        { "x": 300, "y": 300 },
+        { "x": 700, "y": 350 }
+      ]
+    },
+    {
+      "$note": "Low railing you can see over but not walk through",
+      "type": "blocks_movement",
+      "shape": "rectangle",
+      "points": [
+        { "x": 450, "y": 400 },
+        { "x": 500, "y": 650 }
+      ]
+    },
+    {
+      "$note": "Round pillar (blocks movement and vision)",
+      "type": "blocks_both",
+      "shape": "circle",
+      "points": [
+        { "x": 800, "y": 150 },
+        { "x": 850, "y": 150 }
+      ]
+    },
+    {
+      "$note": "Bush / smoke cloud: you can walk through it but not see through",
+      "type": "blocks_vision",
+      "shape": "circle",
+      "points": [
+        { "x": 200, "y": 500 },
+        { "x": 270, "y": 500 }
+      ]
+    }
+  ]
+}

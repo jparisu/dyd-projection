@@ -1,0 +1,31 @@
+{
+  "$comment": "Obstacle file for the demo map (1000x700, 50px grid). Coordinates are in map pixels. Load it from the DM toolbar → 'Load obstacles'.",
+  "obstacles": [
+    {
+      "type": "blocks_both",
+      "shape": "rectangle",
+      "points": [
+        { "x": 200, "y": 100 },
+        { "x": 250, "y": 450 }
+      ]
+    },
+    {
+      "type": "blocks_movement",
+      "shape": "polygon",
+      "points": [
+        { "x": 600, "y": 120 },
+        { "x": 780, "y": 160 },
+        { "x": 720, "y": 320 },
+        { "x": 560, "y": 260 }
+      ]
+    },
+    {
+      "type": "blocks_vision",
+      "shape": "circle",
+      "points": [
+        { "x": 480, "y": 560 },
+        { "x": 560, "y": 560 }
+      ]
+    }
+  ]
+}
