@@ -10,7 +10,13 @@ import multipart from '@fastify/multipart';
 import { Server as SocketServer } from 'socket.io';
 import {
   DEFAULT_SERVER_PORT,
+  GridUpdateSchema,
   InitiativeEntrySchema,
+  ItemCreateSchema,
+  ItemDeleteSchema,
+  ItemDropSchema,
+  ItemPickupSchema,
+  ItemUpdateSchema,
   MapSelectSchema,
   ObstaclesSetSchema,
   PopupSchema,
@@ -175,6 +181,69 @@ io.on('connection', (socket) => {
     guarded(TokenIdSchema, false, ({ id }, ctx) => {
       if (!ctx.sessionId) return;
       io.to(ctx.sessionId).emit('token:selected', { id });
+    }),
+  );
+
+  socket.on(
+    'item:drop',
+    guarded(ItemDropSchema, true, ({ elementId, itemId }, ctx) => {
+      if (!ctx.sessionId) return;
+      const result = store.dropItem(ctx.sessionId, elementId, itemId);
+      if (!result) return;
+      io.to(ctx.sessionId).emit('token:updated', result.carrier);
+      io.to(ctx.sessionId).emit('token:created', result.dropped);
+    }),
+  );
+
+  socket.on(
+    'item:pickup',
+    guarded(ItemPickupSchema, true, ({ elementId, itemElementId }, ctx) => {
+      if (!ctx.sessionId) return;
+      const result = store.pickupItem(ctx.sessionId, elementId, itemElementId);
+      if (!result) return;
+      io.to(ctx.sessionId).emit('token:updated', result.carrier);
+      io.to(ctx.sessionId).emit('token:deleted', { id: result.removedId });
+    }),
+  );
+
+  // Item catalog CRUD. Create/update emit the lightweight `items:updated`;
+  // delete also scrubs element references, so it resends the full session.
+  const emitItems = (sessionId: string) =>
+    io.to(sessionId).emit('items:updated', store.getOrCreate(sessionId).items);
+
+  socket.on(
+    'items:create',
+    guarded(ItemCreateSchema, true, (input, ctx) => {
+      if (!ctx.sessionId) return;
+      store.createItem(ctx.sessionId, input);
+      emitItems(ctx.sessionId);
+    }),
+  );
+
+  socket.on(
+    'items:update',
+    guarded(ItemUpdateSchema, true, ({ id, patch }, ctx) => {
+      if (!ctx.sessionId) return;
+      if (store.updateItem(ctx.sessionId, id, patch)) emitItems(ctx.sessionId);
+    }),
+  );
+
+  socket.on(
+    'items:delete',
+    guarded(ItemDeleteSchema, true, ({ id }, ctx) => {
+      if (!ctx.sessionId) return;
+      if (store.deleteItem(ctx.sessionId, id)) {
+        io.to(ctx.sessionId).emit('session:state', store.getOrCreate(ctx.sessionId));
+      }
+    }),
+  );
+
+  socket.on(
+    'map:update-grid',
+    guarded(GridUpdateSchema, true, ({ mapId, gridType, gridSize }, ctx) => {
+      if (!ctx.sessionId) return;
+      const map = store.setGrid(ctx.sessionId, mapId, gridType, gridSize);
+      if (map) io.to(ctx.sessionId).emit('map:updated', map);
     }),
   );
 

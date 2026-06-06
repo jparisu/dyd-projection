@@ -22,6 +22,22 @@ See [design.md](design.md) for the full roadmap.
 - **Move from either screen** — tokens are draggable in **both** the DM view and
   the projector view, so players can move their own tokens on the table screen.
   (All other edits — create/delete/stats/visibility — stay DM-only.)
+- **Unified item catalog (DM-authored)** — the sidebar's **Catalog** tab
+  creates/edits/deletes items with a name, **custom colour**, **icon** (upload or
+  URL), description, attack type, **range**, **damage**, **spell area** (type/size),
+  and arbitrary **custom properties**. Weapons *and spells are both items* — a spell
+  is just an item with an area shape.
+- **Items & inventory** — each element has an inventory (sidebar): **add**, **drop**
+  (spawns an item token on the map at the carrier), **pick up** (map item → a
+  carrier's inventory), and **equip** a weapon/spell item (`equippedItemId`, which
+  can be cleared back to none).
+- **Attack range** — equipping a weapon/spell item shows its **range** overlay,
+  rendered as a **translucent fill with a hard border on the outer edge** of the
+  area (square and hex) in the item's own colour, alongside the green movement
+  range. Movement-blocking obstacles also block the ranged reach.
+- **Grid type & size** — the DM picks **square** or **hexagonal** and sets the cell
+  size from the toolbar; the grid renders accordingly (real pointy-top hexes) and
+  drives snapping + movement. *No grid (continuous)* is selectable as an early stub.
 - **Background image** — the DM uploads a map picture; it's stored server-side and
   shown behind the grid on both screens.
 - **Obstacles** — load a JSON obstacle file (movement / vision / both) from the DM
@@ -44,8 +60,9 @@ See [design.md](design.md) for the full roadmap.
 **Not wired up yet** (see [design.md](design.md)): fog-of-war rendering (the vision
 toggle stores/broadcasts the mode but no fog overlay is drawn; vision-blocking
 obstacles aren't consumed yet), attack-range overlays, an in-app obstacle drawing
-editor, hex/continuous rendering, and persistence (state is in-memory and resets
-on restart — uploaded images live under `apps/server/uploads/`).
+editor, full *continuous / no-grid* play (it renders without a grid but still uses
+a notional square grid for movement), and persistence (state is in-memory and
+resets on restart — uploaded images live under `apps/server/uploads/`).
 
 ## Obstacle files
 

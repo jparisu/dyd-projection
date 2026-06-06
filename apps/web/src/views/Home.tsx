@@ -22,6 +22,12 @@ export function Home() {
         >
           Projector view
         </Link>
+        <Link
+          to={`/obstacles/${DEMO_SESSION_ID}`}
+          className="rounded-lg bg-amber-800 px-6 py-3 font-semibold hover:bg-amber-700"
+        >
+          Obstacle editor
+        </Link>
       </div>
       <p className="text-sm text-slate-500">Session: {DEMO_SESSION_ID}</p>
     </div>

@@ -1,7 +1,9 @@
 import type { Cell, GameMap, Obstacle, Point } from '@dnd/shared';
 import { cellToPoint, dimensionsInCells } from './grid.js';
 
-type MapDims = Pick<GameMap, 'width' | 'height' | 'gridSize'>;
+type MapDims = Pick<GameMap, 'width' | 'height' | 'gridSize'> & {
+  gridType?: GameMap['gridType'];
+};
 
 export function obstacleBlocksMovement(o: Obstacle): boolean {
   return o.type === 'blocks_movement' || o.type === 'blocks_both';
@@ -65,7 +67,7 @@ export function pointInObstacle(point: Point, o: Obstacle): boolean {
  * Used both to reject drops and to exclude cells from movement range.
  */
 export function isCellBlockedByObstacles(cell: Cell, map: MapDims, obstacles: Obstacle[]): boolean {
-  const center = cellToPoint(cell, map.gridSize);
+  const center = cellToPoint(cell, map);
   return obstacles.some((o) => obstacleBlocksMovement(o) && pointInObstacle(center, o));
 }
 
@@ -77,7 +79,7 @@ export function movementBlockedCells(map: MapDims, obstacles: Obstacle[]): Cell[
   const cells: Cell[] = [];
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      const center = cellToPoint({ col, row }, map.gridSize);
+      const center = cellToPoint({ col, row }, map);
       if (movers.some((o) => pointInObstacle(center, o))) cells.push({ col, row });
     }
   }

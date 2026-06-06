@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import type { GameElement, GameMap, Point } from '@dnd/shared';
+import type { GameElement, GameMap, Item, Point } from '@dnd/shared';
 import { MapScene } from '../pixi/MapScene.js';
 
 interface Props {
   map: GameMap;
   elements: GameElement[];
+  items: Item[];
   selectedId: string | null;
   interactive: boolean;
   autoFit: boolean;

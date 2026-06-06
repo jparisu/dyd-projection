@@ -8,19 +8,23 @@ import {
   Texture,
   type FederatedPointerEvent,
 } from 'pixi.js';
-import type { GameElement, GameMap, Obstacle, Point } from '@dnd/shared';
+import type { Cell, GameElement, GameMap, Item, Obstacle, Point } from '@dnd/shared';
 import {
+  cellKey,
   cellToPoint,
+  dimensionsInCells,
+  hexCorners,
   isCellBlockedByObstacles,
   movementBlockedCells,
+  neighbours,
   pointToCell,
   reachableCells,
 } from '@dnd/rules-engine';
 
 const OBSTACLE_COLORS: Record<Obstacle['type'], number> = {
-  blocks_movement: 0xf87171, // red — can't walk through
-  blocks_vision: 0x60a5fa, // blue — can't see through
-  blocks_both: 0xc084fc, // purple — both
+  blocks_movement: 0xf87171,
+  blocks_vision: 0x60a5fa,
+  blocks_both: 0xc084fc,
 };
 
 const TYPE_COLORS: Record<GameElement['type'], number> = {
@@ -32,17 +36,27 @@ const TYPE_COLORS: Record<GameElement['type'], number> = {
   trap: 0xc084fc,
 };
 
+// Maps ODDR neighbor direction index (0-5) to the pair of hex corner indices
+// that form the shared edge in that direction. Corner order from hexCorners():
+//   0=top-right, 1=bottom-right, 2=bottom, 3=bottom-left, 4=top-left, 5=top
+const HEX_DIR_CORNERS = [[0, 1], [5, 0], [4, 5], [3, 4], [2, 3], [1, 2]] as const;
+
+// Square orthogonal directions + the edge segment they expose (in unit fractions of gridSize)
+const SQUARE_DIRS = [
+  { dc: 0, dr: -1, x1: -0.5, y1: -0.5, x2: 0.5, y2: -0.5 }, // top
+  { dc: 0, dr: 1, x1: -0.5, y1: 0.5, x2: 0.5, y2: 0.5 },   // bottom
+  { dc: -1, dr: 0, x1: -0.5, y1: -0.5, x2: -0.5, y2: 0.5 }, // left
+  { dc: 1, dr: 0, x1: 0.5, y1: -0.5, x2: 0.5, y2: 0.5 },   // right
+];
+
 export interface SceneProps {
   map: GameMap;
   elements: GameElement[];
+  items: Item[];
   selectedId: string | null;
-  /** Tokens can be dragged (enabled on both DM and projector views). */
   interactive: boolean;
-  /** Auto-scale the whole map to fit the viewport (projector view). */
   autoFit: boolean;
-  /** Hide tokens flagged DM-only (projector view). */
   playerVisibleOnly: boolean;
-  /** Draw obstacle overlays (DM always; projector toggles). */
   showObstacles: boolean;
   onSelect: (id: string | null) => void;
   onMove: (id: string, position: Point) => void;
@@ -65,7 +79,6 @@ export class MapScene {
   private props: SceneProps | null = null;
   private dragging: { id: string; container: Container; start: Point } | null = null;
   private loadedImageUrl: string | null = null;
-  /** url -> texture (null while loading / failed) so we draw icons once cached. */
   private iconTextures = new Map<string, Texture | null>();
 
   async init(host: HTMLElement): Promise<void> {
@@ -77,9 +90,6 @@ export class MapScene {
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
     });
-    // React StrictMode (dev) mounts → unmounts → mounts. If destroy() ran during
-    // the async init above, tear the now-fully-initialized app down here instead
-    // of wiring it up (calling destroy() before init finished would throw).
     if (this.destroyed) {
       this.app.destroy(true, { children: true });
       return;
@@ -97,7 +107,6 @@ export class MapScene {
     this.app.stage.eventMode = 'static';
     this.app.stage.hitArea = this.app.screen;
 
-    // Deselect on empty-space click.
     this.app.stage.on('pointerdown', (e: FederatedPointerEvent) => {
       if (e.target === this.app.stage) this.props?.onSelect(null);
     });
@@ -117,7 +126,6 @@ export class MapScene {
     if (props.autoFit) this.fit();
   }
 
-  /** Load (or clear) the map background image; no-op if the URL is unchanged. */
   private async ensureBackground(map: GameMap): Promise<void> {
     const url = map.imageUrl || null;
     if (url === this.loadedImageUrl) return;
@@ -126,7 +134,6 @@ export class MapScene {
     if (!url) return;
     try {
       const texture = await Assets.load(url);
-      // Guard against teardown / a newer image arriving during the async load.
       if (this.destroyed || this.loadedImageUrl !== url) return;
       const sprite = new Sprite(texture);
       sprite.width = map.width;
@@ -137,15 +144,10 @@ export class MapScene {
     }
   }
 
-  /**
-   * Return a cached icon texture, or kick off an async load and return undefined
-   * (the caller draws a placeholder). When the load finishes we redraw tokens so
-   * the icon pops in. Textures are cached by URL across redraws.
-   */
   private requestIconTexture(url: string): Texture | undefined {
     const cached = this.iconTextures.get(url);
     if (cached !== undefined) return cached ?? undefined;
-    this.iconTextures.set(url, null); // mark as loading
+    this.iconTextures.set(url, null);
     void Assets.load(url)
       .then((texture: Texture) => {
         if (this.destroyed) return;
@@ -172,17 +174,25 @@ export class MapScene {
   private drawGrid(map: GameMap): void {
     this.gridLayer.removeChildren();
     const g = new Graphics();
-    // Only paint a solid backdrop when there is no image to show through.
     if (!map.imageUrl) {
       g.rect(0, 0, map.width, map.height).fill(0x141a26);
     }
 
-    if (map.gridType !== 'continuous') {
+    if (map.gridType === 'square') {
       for (let x = 0; x <= map.width; x += map.gridSize) {
         g.moveTo(x, 0).lineTo(x, map.height);
       }
       for (let y = 0; y <= map.height; y += map.gridSize) {
         g.moveTo(0, y).lineTo(map.width, y);
+      }
+      g.stroke({ width: 1, color: 0x263144, alpha: 0.8 });
+    } else if (map.gridType === 'hex') {
+      const { cols, rows } = dimensionsInCells(map);
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const center = cellToPoint({ col, row }, map);
+          g.poly(hexCorners(center, map.gridSize).flatMap((p) => [p.x, p.y]));
+        }
       }
       g.stroke({ width: 1, color: 0x263144, alpha: 0.8 });
     }
@@ -232,42 +242,102 @@ export class MapScene {
 
   private drawOverlay(props: SceneProps): void {
     this.overlayLayer.removeChildren();
-    const { selectedId, map, elements } = props;
+    const { selectedId, elements } = props;
     if (!selectedId) return;
     const selected = elements.find((e) => e.id === selectedId);
     if (!selected) return;
 
+    this.drawAttackRange(props, selected);
+    this.drawMovementRange(props, selected);
+  }
+
+  /**
+   * Draw a set of cells with a translucent fill and a hard border only on the
+   * outer perimeter of the area (edges adjacent to cells NOT in the set).
+   */
+  private drawCellsOverlay(cells: Cell[], map: GameMap, color: number): void {
+    if (cells.length === 0) return;
+    const cellSet = new Set(cells.map(cellKey));
+    const gs = map.gridSize;
+    const gFill = new Graphics();
+    const gBorder = new Graphics();
+
+    if (map.gridType === 'hex') {
+      for (const cell of cells) {
+        const center = cellToPoint(cell, map);
+        const corners = hexCorners(center, gs);
+        gFill.poly(corners.flatMap((p) => [p.x, p.y]));
+
+        const nbrs = neighbours(cell, 'hex');
+        for (let d = 0; d < 6; d++) {
+          if (cellSet.has(cellKey(nbrs[d]))) continue;
+          const [ci, cj] = HEX_DIR_CORNERS[d];
+          gBorder.moveTo(corners[ci].x, corners[ci].y).lineTo(corners[cj].x, corners[cj].y);
+        }
+      }
+    } else {
+      for (const cell of cells) {
+        const center = cellToPoint(cell, map);
+        gFill.rect(center.x - gs / 2, center.y - gs / 2, gs, gs);
+
+        for (const { dc, dr, x1, y1, x2, y2 } of SQUARE_DIRS) {
+          const nk = cellKey({ col: cell.col + dc, row: cell.row + dr });
+          if (cellSet.has(nk)) continue;
+          gBorder
+            .moveTo(center.x + x1 * gs, center.y + y1 * gs)
+            .lineTo(center.x + x2 * gs, center.y + y2 * gs);
+        }
+      }
+    }
+
+    gFill.fill({ color, alpha: 0.15 });
+    gBorder.stroke({ width: 3, color, alpha: 0.88 });
+    this.overlayLayer.addChild(gFill, gBorder);
+  }
+
+  private drawMovementRange(props: SceneProps, selected: GameElement): void {
+    const { map, elements } = props;
     const speed = Number(selected.stats.speed ?? 0);
     if (speed <= 0) return;
 
     const blocked = [
-      ...elements.filter((e) => e.id !== selected.id).map((e) => pointToCell(e.position, map.gridSize)),
+      ...elements.filter((e) => e.id !== selected.id).map((e) => pointToCell(e.position, map)),
       ...movementBlockedCells(map, map.obstacles),
     ];
 
-    const cells = reachableCells(pointToCell(selected.position, map.gridSize), {
+    const cells = reachableCells(pointToCell(selected.position, map), {
       map,
       blocked,
       range: speed,
     });
 
-    const g = new Graphics();
-    for (const cell of cells) {
-      const center = cellToPoint(cell, map.gridSize);
-      g.rect(
-        center.x - map.gridSize / 2,
-        center.y - map.gridSize / 2,
-        map.gridSize,
-        map.gridSize,
-      );
-    }
-    g.fill({ color: 0x4ade80, alpha: 0.18 });
-    this.overlayLayer.addChild(g);
+    this.drawCellsOverlay(cells, map, 0x4ade80);
+  }
+
+  private drawAttackRange(props: SceneProps, selected: GameElement): void {
+    const { map, items } = props;
+
+    // The equipped item (weapon or spell) carries its own range + colour.
+    const equippedItem = selected.equippedItemId
+      ? items.find((i) => i.id === selected.equippedItemId)
+      : undefined;
+    if (!equippedItem?.range || equippedItem.range <= 0) return;
+
+    // Movement-blocking obstacles block ranged attacks the same way they block
+    // movement — the range BFS cannot pass through them.
+    const blocked = movementBlockedCells(map, map.obstacles);
+    const cells = reachableCells(pointToCell(selected.position, map), {
+      map,
+      blocked,
+      range: equippedItem.range,
+    });
+    const color = equippedItem.color ? parseInt(equippedItem.color.replace('#', ''), 16) : 0xf59e0b;
+    this.drawCellsOverlay(cells, map, color);
   }
 
   private drawTokens(props: SceneProps): void {
     this.tokenLayer.removeChildren();
-    const { map, elements, selectedId, interactive, playerVisibleOnly } = props;
+    const { map, elements, items, selectedId, interactive, playerVisibleOnly } = props;
     const radius = map.gridSize * 0.42;
 
     for (const el of elements) {
@@ -280,10 +350,18 @@ export class MapScene {
       const selected = el.id === selectedId;
       const ringWidth = selected ? 4 : 2;
       const ringColor = selected ? 0xffffff : 0x0b0e14;
+
+      // Item tokens use the catalog item's custom color if defined.
+      const itemDef = el.type === 'item' && el.itemId
+        ? items.find((i) => i.id === el.itemId)
+        : undefined;
+      const tokenColor = itemDef?.color
+        ? parseInt(itemDef.color.replace('#', ''), 16)
+        : TYPE_COLORS[el.type];
+
       const icon = el.iconUrl ? this.requestIconTexture(el.iconUrl) : undefined;
 
       if (icon) {
-        // Circular icon image clipped to the token disc, with a coloured ring.
         const sprite = new Sprite(icon);
         sprite.anchor.set(0.5);
         sprite.width = r * 2;
@@ -292,13 +370,13 @@ export class MapScene {
         token.addChild(sprite, mask);
         sprite.mask = mask;
         token.addChild(
-          new Graphics().circle(0, 0, r).stroke({ width: ringWidth, color: TYPE_COLORS[el.type] }),
+          new Graphics().circle(0, 0, r).stroke({ width: ringWidth, color: tokenColor }),
         );
       } else {
         token.addChild(
           new Graphics()
             .circle(0, 0, r)
-            .fill(TYPE_COLORS[el.type])
+            .fill(tokenColor)
             .stroke({ width: ringWidth, color: ringColor }),
         );
       }
@@ -346,18 +424,16 @@ export class MapScene {
     if (!this.dragging || !this.props) return;
     const local = this.world.toLocal(e.global);
     const { map } = this.props;
-    // Snap to cell center for discrete grids; keep raw position for continuous.
     const snapped =
       map.gridType === 'continuous'
         ? { x: local.x, y: local.y }
-        : cellToPoint(pointToCell(local, map.gridSize), map.gridSize);
+        : cellToPoint(pointToCell(local, map), map);
 
     const { id, container, start } = this.dragging;
     this.app.stage.off('pointermove', this.onDragMove);
     this.dragging = null;
 
-    // Reject drops into a movement-blocking obstacle: snap the token back.
-    if (isCellBlockedByObstacles(pointToCell(snapped, map.gridSize), map, map.obstacles)) {
+    if (isCellBlockedByObstacles(pointToCell(snapped, map), map, map.obstacles)) {
       container.position.set(start.x, start.y);
       return;
     }
@@ -366,9 +442,6 @@ export class MapScene {
 
   destroy(): void {
     this.destroyed = true;
-    // If init() hasn't finished, don't touch the app — it isn't fully set up yet
-    // (PixiJS's resize plugin isn't attached, so destroy() would throw). init()
-    // sees `destroyed` and cleans up itself once it resolves.
     if (!this.ready) return;
     this.ready = false;
     this.app.destroy(true, { children: true });

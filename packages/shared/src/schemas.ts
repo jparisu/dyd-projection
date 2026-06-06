@@ -46,25 +46,28 @@ export const GameMapSchema = z.object({
 });
 export type GameMap = z.infer<typeof GameMapSchema>;
 
-export const WeaponSchema = z.object({
+/**
+ * Unified catalog entry: plain gear, weapons, and spells are all Items.
+ * Weapon-ness is implied by `attackType`/`range`; spell-ness by `areaType`.
+ */
+export const ItemSchema = z.object({
   id: z.string(),
   name: z.string(),
-  range: z.number().nonnegative(),
-  damage: z.string(),
-  attackType: z.enum(['melee', 'ranged']),
-  properties: z.array(z.string()).default([]),
-});
-export type Weapon = z.infer<typeof WeaponSchema>;
-
-export const SpellSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  range: z.number().nonnegative(),
+  description: z.string().default(''),
+  iconUrl: z.string().optional(),
+  /** Display colour (CSS hex, e.g. "#f59e0b"); used for the range overlay + token. */
+  color: z.string().optional(),
+  /** Combat fields — present when the item is a weapon or a spell. */
+  attackType: z.enum(['melee', 'ranged']).optional(),
+  range: z.number().nonnegative().optional(),
+  damage: z.string().optional(),
+  /** Spell area shape/size (present when the item is a spell). */
   areaType: z.enum(['single', 'cone', 'sphere', 'line', 'cube']).optional(),
   areaSize: z.number().nonnegative().optional(),
-  description: z.string().default(''),
+  /** Arbitrary custom properties (weight, value, charges, …). */
+  properties: z.record(StatValueSchema).default({}),
 });
-export type Spell = z.infer<typeof SpellSchema>;
+export type Item = z.infer<typeof ItemSchema>;
 
 export const GameElementSchema = z.object({
   id: z.string(),
@@ -77,8 +80,12 @@ export const GameElementSchema = z.object({
   size: z.number().positive().default(1),
   visibleToPlayers: z.boolean().default(true),
   stats: z.record(StatValueSchema).default({}),
-  equippedWeaponId: z.string().optional(),
-  selectedSpellId: z.string().optional(),
+  /** Catalog item equipped as the active weapon/spell — drives attack range. */
+  equippedItemId: z.string().optional(),
+  /** Item ids this element is carrying. */
+  inventory: z.array(z.string()).default([]),
+  /** For map tokens of type "item": the item-catalog id this token represents. */
+  itemId: z.string().optional(),
 });
 export type GameElement = z.infer<typeof GameElementSchema>;
 
@@ -123,7 +130,6 @@ export const SessionStateSchema = z.object({
   maps: z.array(GameMapSchema),
   elements: z.array(GameElementSchema),
   initiative: z.array(InitiativeEntrySchema),
-  weapons: z.array(WeaponSchema),
-  spells: z.array(SpellSchema),
+  items: z.array(ItemSchema).default([]),
 });
 export type SessionState = z.infer<typeof SessionStateSchema>;

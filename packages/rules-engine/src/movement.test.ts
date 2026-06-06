@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Cell } from '@dnd/shared';
 import { cellKey } from './grid.js';
-import { reachableCells } from './movement.js';
+import { cellsWithinRange, reachableCells } from './movement.js';
 
 const map = { gridType: 'square' as const, width: 500, height: 500, gridSize: 50 };
 // => 10x10 cell grid
@@ -36,6 +36,13 @@ describe('reachableCells (square grid, 8-way)', () => {
     ];
     const cells = reachableCells({ col: 5, row: 5 }, { map, blocked, range: 5 });
     expect(cells).toHaveLength(0);
+  });
+
+  it('cellsWithinRange ignores blockers and covers the full disc', () => {
+    // melee reach 1 => the 8 adjacent cells
+    expect(cellsWithinRange({ col: 5, row: 5 }, map, 1)).toHaveLength(8);
+    // reach 2 => 5x5 block minus the start cell, regardless of any obstacles
+    expect(cellsWithinRange({ col: 5, row: 5 }, map, 2)).toHaveLength(24);
   });
 
   it('cannot move through a wall of blocked cells', () => {

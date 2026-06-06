@@ -45,3 +45,16 @@ export function reachableCells(start: Cell, options: MovementOptions): Cell[] {
 
   return reachable;
 }
+
+/**
+ * Cells within `range` steps of `start`, ignoring blockers — the attack/spell
+ * reach of a stationary token (start cell excluded). Obstacle-aware vision is a
+ * later phase; for now reach is pure grid distance.
+ */
+export function cellsWithinRange(
+  start: Cell,
+  map: MovementOptions['map'],
+  range: number,
+): Cell[] {
+  return reachableCells(start, { map, blocked: [], range });
+}

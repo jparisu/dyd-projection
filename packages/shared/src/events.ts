@@ -3,7 +3,9 @@ import { PointSchema } from './geometry.js';
 import {
   GameElementSchema,
   GameMapSchema,
+  GridTypeSchema,
   InitiativeEntrySchema,
+  ItemSchema,
   ObstacleSchema,
   SessionStateSchema,
   VisibilityModeSchema,
@@ -55,6 +57,28 @@ export type TokenId = z.infer<typeof TokenIdSchema>;
 
 export const MapSelectSchema = z.object({ mapId: z.string() });
 
+/** Drop an inventory item onto the map at the carrier's position. */
+export const ItemDropSchema = z.object({ elementId: z.string(), itemId: z.string() });
+/** Pick up a map item-token into an element's inventory. */
+export const ItemPickupSchema = z.object({ elementId: z.string(), itemElementId: z.string() });
+
+// ---- Item catalog CRUD (DM authoring) ------------------------------------
+export const ItemCreateSchema = ItemSchema.omit({ id: true });
+export type ItemCreateInput = z.input<typeof ItemCreateSchema>;
+export const ItemUpdateSchema = z.object({
+  id: z.string(),
+  patch: ItemSchema.omit({ id: true }).partial(),
+});
+export const ItemDeleteSchema = z.object({ id: z.string() });
+
+/** Change a map's grid type and/or cell size. */
+export const GridUpdateSchema = z.object({
+  mapId: z.string(),
+  gridType: GridTypeSchema,
+  gridSize: z.number().positive().max(1000),
+});
+export type GridUpdate = z.infer<typeof GridUpdateSchema>;
+
 /** A single obstacle as authored in a file / sent by a client (no id/mapId). */
 export const ObstacleInputSchema = ObstacleSchema.omit({ id: true, mapId: true });
 export type ObstacleInput = z.input<typeof ObstacleInputSchema>;
@@ -83,11 +107,17 @@ export type Popup = z.infer<typeof PopupSchema>;
 export interface ClientToServerEvents {
   'session:join': (payload: z.infer<typeof SessionJoinSchema>) => void;
   'map:select': (payload: z.infer<typeof MapSelectSchema>) => void;
+  'map:update-grid': (payload: z.infer<typeof GridUpdateSchema>) => void;
   'token:create': (payload: z.input<typeof TokenCreateSchema>) => void;
   'token:update': (payload: z.infer<typeof TokenUpdateSchema>) => void;
   'token:move': (payload: z.infer<typeof TokenMoveSchema>) => void;
   'token:delete': (payload: z.infer<typeof TokenIdSchema>) => void;
   'token:select': (payload: z.infer<typeof TokenIdSchema>) => void;
+  'item:drop': (payload: z.infer<typeof ItemDropSchema>) => void;
+  'item:pickup': (payload: z.infer<typeof ItemPickupSchema>) => void;
+  'items:create': (payload: z.input<typeof ItemCreateSchema>) => void;
+  'items:update': (payload: z.infer<typeof ItemUpdateSchema>) => void;
+  'items:delete': (payload: z.infer<typeof ItemDeleteSchema>) => void;
   'obstacle:create': (payload: z.infer<typeof ObstacleSchema>) => void;
   'obstacle:delete': (payload: z.infer<typeof TokenIdSchema>) => void;
   'obstacles:set': (payload: z.input<typeof ObstaclesSetSchema>) => void;
@@ -108,5 +138,7 @@ export interface ServerToClientEvents {
   'initiative:updated': (entries: z.infer<typeof InitiativeEntrySchema>[]) => void;
   'visibility:updated': (payload: z.infer<typeof VisibilitySetSchema>) => void;
   'dm:popup': (payload: z.infer<typeof PopupSchema>) => void;
+  /** Broadcast when the item catalog changes (create / update / delete). */
+  'items:updated': (items: z.infer<typeof ItemSchema>[]) => void;
   error: (payload: { message: string }) => void;
 }

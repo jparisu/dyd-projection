@@ -42,6 +42,7 @@ export function ProjectorView() {
       <MapCanvas
         map={activeMap}
         elements={state.elements}
+        items={state.items}
         selectedId={selectedId}
         interactive
         autoFit

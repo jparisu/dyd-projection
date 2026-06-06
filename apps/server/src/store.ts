@@ -4,9 +4,8 @@ import {
   type GameElement,
   type GameMap,
   type InitiativeEntry,
+  type Item,
   type SessionState,
-  type Spell,
-  type Weapon,
 } from '@dnd/shared';
 
 /**
@@ -47,6 +46,20 @@ export class SessionStore {
     return this.getOrCreate(sessionId).maps.find((m) => m.id === mapId);
   }
 
+  setGrid(
+    sessionId: string,
+    mapId: string,
+    gridType: GameMap['gridType'],
+    gridSize: number,
+  ): GameMap | undefined {
+    const map = this.getMap(sessionId, mapId);
+    if (!map) return undefined;
+    map.gridType = gridType;
+    map.gridSize = gridSize;
+    this.touch(this.getOrCreate(sessionId));
+    return map;
+  }
+
   setMapImage(sessionId: string, mapId: string, imageUrl: string): GameMap | undefined {
     const map = this.getMap(sessionId, mapId);
     if (!map) return undefined;
@@ -81,8 +94,9 @@ export class SessionStore {
       size: input.size ?? 1,
       visibleToPlayers: input.visibleToPlayers ?? true,
       stats: input.stats ?? { hp: 10, speed: 6 },
-      equippedWeaponId: input.equippedWeaponId,
-      selectedSpellId: input.selectedSpellId,
+      equippedItemId: input.equippedItemId,
+      inventory: input.inventory ?? [],
+      itemId: input.itemId,
     };
     state.elements.push(element);
     this.touch(state);
@@ -100,6 +114,89 @@ export class SessionStore {
 
   moveElement(sessionId: string, id: string, position: GameElement['position']): GameElement | undefined {
     return this.updateElement(sessionId, id, { position });
+  }
+
+  getElement(sessionId: string, id: string): GameElement | undefined {
+    return this.getOrCreate(sessionId).elements.find((e) => e.id === id);
+  }
+
+  // ---- Item catalog -------------------------------------------------------
+
+  createItem(sessionId: string, input: Omit<Item, 'id'>): Item {
+    const state = this.getOrCreate(sessionId);
+    const item: Item = { ...input, id: randomUUID() };
+    state.items.push(item);
+    this.touch(state);
+    return item;
+  }
+
+  updateItem(sessionId: string, id: string, patch: Partial<Item>): Item | undefined {
+    const state = this.getOrCreate(sessionId);
+    const item = state.items.find((i) => i.id === id);
+    if (!item) return undefined;
+    Object.assign(item, patch, { id: item.id });
+    this.touch(state);
+    return item;
+  }
+
+  /** Remove an item from the catalog and scrub references to it from elements. */
+  deleteItem(sessionId: string, id: string): boolean {
+    const state = this.getOrCreate(sessionId);
+    const before = state.items.length;
+    state.items = state.items.filter((i) => i.id !== id);
+    if (state.items.length === before) return false;
+    for (const el of state.elements) {
+      if (el.inventory.includes(id)) el.inventory = el.inventory.filter((x) => x !== id);
+      if (el.equippedItemId === id) el.equippedItemId = undefined;
+    }
+    // Drop loose map tokens that represented this item.
+    state.elements = state.elements.filter((e) => e.itemId !== id);
+    this.touch(state);
+    return true;
+  }
+
+  /**
+   * Move an item from a carrier's inventory onto the map as an item-token at the
+   * carrier's position. Returns the updated carrier and the new map token.
+   */
+  dropItem(
+    sessionId: string,
+    elementId: string,
+    itemId: string,
+  ): { carrier: GameElement; dropped: GameElement } | undefined {
+    const state = this.getOrCreate(sessionId);
+    const carrier = state.elements.find((e) => e.id === elementId);
+    if (!carrier) return undefined;
+    const idx = carrier.inventory.indexOf(itemId);
+    if (idx === -1) return undefined;
+    carrier.inventory = carrier.inventory.filter((_, i) => i !== idx);
+    const item = state.items.find((i) => i.id === itemId);
+    const dropped = this.createElement(sessionId, {
+      mapId: carrier.mapId,
+      type: 'item',
+      name: item?.name ?? 'Item',
+      iconUrl: item?.iconUrl,
+      position: { ...carrier.position },
+      itemId,
+    });
+    this.touch(state);
+    return { carrier, dropped };
+  }
+
+  /** Pick up a map item-token into an element's inventory; removes the token. */
+  pickupItem(
+    sessionId: string,
+    elementId: string,
+    itemElementId: string,
+  ): { carrier: GameElement; removedId: string } | undefined {
+    const state = this.getOrCreate(sessionId);
+    const carrier = state.elements.find((e) => e.id === elementId);
+    const itemToken = state.elements.find((e) => e.id === itemElementId);
+    if (!carrier || !itemToken || itemToken.type !== 'item' || !itemToken.itemId) return undefined;
+    carrier.inventory = [...carrier.inventory, itemToken.itemId];
+    state.elements = state.elements.filter((e) => e.id !== itemElementId);
+    this.touch(state);
+    return { carrier, removedId: itemElementId };
   }
 
   deleteElement(sessionId: string, id: string): boolean {
@@ -143,8 +240,7 @@ function buildEmptySession(sessionId: string): SessionState {
     maps: [],
     elements: [],
     initiative: [],
-    weapons: [],
-    spells: [],
+    items: [],
   };
 }
 
@@ -183,12 +279,29 @@ function buildDemoSession(): SessionState {
     ],
   };
 
-  const weapons: Weapon[] = [
-    { id: 'wpn-sword', name: 'Longsword', range: 1, damage: '1d8', attackType: 'melee', properties: [] },
-    { id: 'wpn-bow', name: 'Shortbow', range: 16, damage: '1d6', attackType: 'ranged', properties: ['ammunition'] },
-  ];
-  const spells: Spell[] = [
-    { id: 'spell-firebolt', name: 'Fire Bolt', range: 24, areaType: 'single', description: 'A mote of fire.' },
+  const items: Item[] = [
+    {
+      id: 'item-sword', name: 'Longsword', description: 'A trusty blade.',
+      attackType: 'melee', range: 1, damage: '1d8', color: '#ef4444', properties: { weight: 3 },
+    },
+    {
+      id: 'item-bow', name: 'Shortbow', description: 'A simple bow.',
+      attackType: 'ranged', range: 16, damage: '1d6', color: '#f59e0b', properties: { weight: 2 },
+    },
+    // Spells are items too (merged): area shape lives on the item.
+    {
+      id: 'item-firebolt', name: 'Fire Bolt', description: 'A mote of fire.',
+      attackType: 'ranged', range: 24, damage: '1d10', areaType: 'single', color: '#fb923c', properties: { level: 0 },
+    },
+    {
+      id: 'item-fireball', name: 'Fireball', description: 'A burst of flame.',
+      attackType: 'ranged', range: 30, damage: '8d6', areaType: 'sphere', areaSize: 4, color: '#f97316', properties: { level: 3 },
+    },
+    {
+      id: 'item-potion', name: 'Healing Potion', description: 'Restores 2d4+2 HP.',
+      color: '#34d399', properties: { charges: 1 },
+    },
+    { id: 'item-key', name: 'Rusty Key', description: 'Opens something, somewhere.', color: '#94a3b8', properties: {} },
   ];
 
   const elements: GameElement[] = [
@@ -202,7 +315,8 @@ function buildDemoSession(): SessionState {
       size: 1,
       visibleToPlayers: true,
       stats: { hp: 24, speed: 6 },
-      equippedWeaponId: 'wpn-bow',
+      equippedItemId: 'item-bow',
+      inventory: ['item-bow', 'item-sword', 'item-firebolt', 'item-potion'],
     },
     {
       id: 'el-goblin',
@@ -214,7 +328,21 @@ function buildDemoSession(): SessionState {
       size: 1,
       visibleToPlayers: true,
       stats: { hp: 7, speed: 6 },
-      equippedWeaponId: 'wpn-sword',
+      equippedItemId: 'item-sword',
+      inventory: ['item-sword'],
+    },
+    {
+      id: 'el-loot',
+      sessionId: DEMO_SESSION_ID,
+      mapId: map.id,
+      type: 'item',
+      name: 'Healing Potion',
+      position: { x: 325, y: 575 },
+      size: 1,
+      visibleToPlayers: true,
+      stats: {},
+      inventory: [],
+      itemId: 'item-potion',
     },
   ];
 
@@ -237,7 +365,6 @@ function buildDemoSession(): SessionState {
     maps: [map],
     elements,
     initiative,
-    weapons,
-    spells,
+    items,
   };
 }

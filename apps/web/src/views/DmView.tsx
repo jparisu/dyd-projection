@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ObstacleFileSchema, type ElementType, type VisibilityMode } from '@dnd/shared';
+import { ObstacleFileSchema, type ElementType, type GridType, type VisibilityMode } from '@dnd/shared';
 import { useSession } from '../useSession.js';
 import { useGameStore } from '../store.js';
 import { MapCanvas } from '../components/MapCanvas.js';
@@ -37,6 +37,7 @@ export function DmView() {
           <MapCanvas
             map={activeMap}
             elements={state.elements}
+            items={state.items}
             selectedId={selectedId}
             interactive
             autoFit={false}
@@ -66,6 +67,7 @@ function Toolbar({ sessionId, connected }: { sessionId: string; connected: boole
   const sendPopup = useGameStore((s) => s.sendPopup);
   const uploadMapImage = useGameStore((s) => s.uploadMapImage);
   const loadObstacles = useGameStore((s) => s.loadObstacles);
+  const setGrid = useGameStore((s) => s.setGrid);
   const [popupText, setPopupText] = useState('');
 
   const visibility = state?.session.visibilityMode ?? 'all';
@@ -140,6 +142,34 @@ function Toolbar({ sessionId, connected }: { sessionId: string; connected: boole
       <label className="cursor-pointer rounded bg-slate-700 px-2 py-1 hover:bg-slate-600">
         Load obstacles
         <input type="file" accept="application/json,.json" onChange={onObstacleFile} className="hidden" />
+      </label>
+      <div className="mx-2 h-5 w-px bg-slate-700" />
+      <label className="flex items-center gap-1 text-slate-400">
+        Grid
+        <select
+          value={activeMap?.gridType ?? 'square'}
+          onChange={(e) => setGrid(e.target.value as GridType, activeMap?.gridSize ?? 50)}
+          className="rounded bg-slate-800 px-1 py-1 text-slate-200"
+        >
+          <option value="square">Square</option>
+          <option value="hex">Hexagonal</option>
+          <option value="continuous">None (soon)</option>
+        </select>
+      </label>
+      <label className="flex items-center gap-1 text-slate-400">
+        Size
+        <input
+          type="number"
+          min={10}
+          max={400}
+          step={5}
+          value={activeMap?.gridSize ?? 50}
+          onChange={(e) => {
+            const size = Number(e.target.value);
+            if (size > 0) setGrid(activeMap?.gridType ?? 'square', size);
+          }}
+          className="w-16 rounded bg-slate-800 px-2 py-1 text-slate-200"
+        />
       </label>
 
       <div className="mx-2 h-5 w-px bg-slate-700" />

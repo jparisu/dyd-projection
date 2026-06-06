@@ -3,7 +3,10 @@ import type {
   ClientRole,
   GameElement,
   GameMap,
+  GridType,
   InitiativeEntry,
+  Item,
+  ItemCreateInput,
   ObstacleInput,
   Point,
   Popup,
@@ -41,6 +44,12 @@ interface GameStore {
   uploadFile: (file: File) => Promise<string | undefined>;
   loadObstacles: (obstacles: ObstacleInput[]) => void;
   toggleObstacles: () => void;
+  setGrid: (gridType: GridType, gridSize: number) => void;
+  dropItem: (elementId: string, itemId: string) => void;
+  pickupItem: (elementId: string, itemElementId: string) => void;
+  createItem: (input: ItemCreateInput) => void;
+  updateItem: (id: string, patch: Partial<Item>) => void;
+  deleteItem: (id: string) => void;
 
   // derived helpers
   activeMap: () => GameMap | undefined;
@@ -126,6 +135,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     socket.on('initiative:updated', (initiative) =>
       set((s) => (s.state ? { state: { ...s.state, initiative } } : s)),
     );
+    socket.on('items:updated', (items) =>
+      set((s) => (s.state ? { state: { ...s.state, items } } : s)),
+    );
     socket.on('visibility:updated', ({ mode }) =>
       set((s) =>
         s.state ? { state: { ...s.state, session: { ...s.state.session, visibilityMode: mode } } } : s,
@@ -184,6 +196,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().socket?.emit('obstacles:set', { mapId: map.id, obstacles });
   },
   toggleObstacles: () => set((s) => ({ showObstacles: !s.showObstacles })),
+  setGrid: (gridType, gridSize) => {
+    const map = get().activeMap();
+    if (!map) return;
+    get().socket?.emit('map:update-grid', { mapId: map.id, gridType, gridSize });
+  },
+  dropItem: (elementId, itemId) => get().socket?.emit('item:drop', { elementId, itemId }),
+  pickupItem: (elementId, itemElementId) =>
+    get().socket?.emit('item:pickup', { elementId, itemElementId }),
+  createItem: (input) => get().socket?.emit('items:create', input),
+  updateItem: (id, patch) => get().socket?.emit('items:update', { id, patch }),
+  deleteItem: (id) => get().socket?.emit('items:delete', { id }),
 
   activeMap: () => {
     const s = get().state;
